@@ -1,5 +1,7 @@
 # FleetOps — Fleet Management & Vehicle Operations Platform
 
+**Live demo:** https://fleetops-sai.vercel.app — demo login `manager@example.com` / `Password123!`
+
 A production-style enterprise SaaS for companies that operate multiple vehicles and
 drivers: fleet inventory, driver roster, trip lifecycle, live GPS tracking
 (simulated), maintenance scheduling, fuel logging, document expiry tracking,
