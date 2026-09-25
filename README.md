@@ -165,6 +165,44 @@ Integration tests spin up against `DATABASE_URL` when a Postgres is reachable.
 - Reset-token endpoint returns the token in the response **for the demo only** —
   wire an email provider (SMTP) for production.
 
+## Deployment (free tier: Vercel + Render + Neon)
+
+Do these in order — later steps need URLs from earlier ones.
+
+**1. Database — Neon**
+- neon.tech → New Project → copy the **pooled** connection string
+  (`postgresql://...-pooler...neon.tech/fleetdb?sslmode=require`)
+
+**2. Backend + AI service — Render blueprint**
+- render.com → **New → Blueprint** → connect `saiganesh-09/fleet-management-platform`
+- Render detects `render.yaml` and prompts for the `sync: false` vars:
+
+  | Var | Value |
+  |---|---|
+  | `DATABASE_URL` | Neon pooled connection string |
+  | `AI_INTERNAL_TOKEN` | any random string — **paste the same value for both services** |
+  | `AI_SERVICE_URL` | `https://fleetops-ai.onrender.com` |
+  | `BACKEND_URL` | `https://fleetops-backend.onrender.com` |
+  | `FRONTEND_URL` / `CORS_ORIGINS` | `https://<your-app>.vercel.app` (step 3) |
+
+- After both services deploy green, seed demo data via Render **Shell** on
+  `fleetops-backend`: `npx tsx prisma/seed.ts`
+
+**3. Frontend — Vercel**
+- vercel.com → Add New → Project → import the repo
+- **Root Directory: `frontend`**
+- Env vars:
+  - `NEXT_PUBLIC_API_URL` = `https://fleetops-backend.onrender.com/api`
+  - `NEXT_PUBLIC_SOCKET_URL` = `https://fleetops-backend.onrender.com`
+- Deploy → copy the `*.vercel.app` URL back into `FRONTEND_URL`/`CORS_ORIGINS`
+  on Render and redeploy the backend
+
+**Notes**
+- Free Render services sleep after ~15 min idle — first request takes ~30–60 s
+  (a nice thing to mention in interviews, or upgrade to keep-alive).
+- WebSockets work on Render web services; Socket.IO needs no extra config.
+- `AI_API_KEY` empty → deterministic assistant; set it to enable LLM answers.
+
 ## Known limitations / next steps
 
 - Map defaults to OSM tiles; set `NEXT_PUBLIC_MAPBOX_TOKEN` for Mapbox styling.

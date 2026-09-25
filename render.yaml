@@ -1,0 +1,63 @@
+# Render blueprint — deploys the backend + AI service.
+# Database is external (Neon serverless Postgres); frontend deploys on Vercel.
+# After "New Blueprint Instance", Render will prompt for each `sync: false` value:
+#
+#   DATABASE_URL        — Neon pooled connection string
+#                         (postgresql://user:pass@ep-xxx-pooler.region.aws.neon.tech/fleetdb?sslmode=require)
+#   FRONTEND_URL        — https://<your-app>.vercel.app   (set after Vercel deploy)
+#   CORS_ORIGINS        — same as FRONTEND_URL (comma-separate if >1)
+#   AI_SERVICE_URL      — https://fleetops-ai.onrender.com
+#   BACKEND_URL         — https://fleetops-backend.onrender.com
+#   AI_INTERNAL_TOKEN   — same random string in BOTH services (e.g. `openssl rand -hex 32`)
+#   AI_API_KEY          — optional; leave empty for deterministic mode
+
+services:
+  - type: web
+    name: fleetops-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && node dist/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: AI_INTERNAL_TOKEN
+        sync: false
+      - key: AI_SERVICE_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: GPS_SIMULATOR_ENABLED
+        value: "true"
+      - key: GPS_SIMULATOR_INTERVAL_MS
+        value: "3000"
+
+  - type: web
+    name: fleetops-ai
+    runtime: python
+    plan: free
+    rootDir: ai-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: BACKEND_URL
+        sync: false
+      - key: AI_INTERNAL_TOKEN
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_BASE_URL
+        value: https://api.openai.com/v1
+      - key: AI_MODEL
+        value: gpt-4o-mini

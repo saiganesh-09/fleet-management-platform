@@ -13,7 +13,7 @@ function required(name: string, fallback?: string): string {
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   isProd: process.env.NODE_ENV === 'production',
-  port: parseInt(process.env.BACKEND_PORT ?? '4000', 10),
+  port: parseInt(process.env.PORT ?? process.env.BACKEND_PORT ?? '4000', 10),
   databaseUrl: required('DATABASE_URL', 'postgresql://fleet:fleet@localhost:5432/fleetdb?schema=public'),
   jwtSecret: required('JWT_SECRET', 'dev-access-secret'),
   jwtRefreshSecret: required('JWT_REFRESH_SECRET', 'dev-refresh-secret'),
