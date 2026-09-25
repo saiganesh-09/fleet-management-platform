@@ -59,6 +59,28 @@ export const authService = {
       message: `Hi ${user.name.split(' ')[0]} — your account is ready with the ${role.replace(/_/g, ' ')} role. Explore the dashboard, live map and reports.`,
       type: 'SUCCESS',
     });
+    // Backfill the current alert feed so a brand-new account isn't empty until
+    // the next broadcast cycle (alert cooldowns skip re-sends for 6h).
+    // Backfill the current alert feed from an admin's inbox so a brand-new
+    // account isn't empty until the next broadcast cycle (cooldowns skip
+    // re-sends for 6h).
+    const admin = await prisma.user.findFirst({
+      where: { role: 'SUPER_ADMIN' },
+      select: { id: true },
+    });
+    if (admin) {
+      const latestBroadcasts = await prisma.notification.findMany({
+        where: { userId: admin.id, title: { not: 'Welcome to FleetOps' } },
+        orderBy: { createdAt: 'desc' },
+        take: 60,
+        select: { title: true, message: true, type: true },
+      });
+      if (latestBroadcasts.length) {
+        await prisma.notification.createMany({
+          data: latestBroadcasts.map((n) => ({ ...n, userId: user.id })),
+        });
+      }
+    }
     const tokens = await issueSession(user.id, user.email, user.role, meta);
     return { user, ...tokens };
   },
