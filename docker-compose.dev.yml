@@ -1,0 +1,24 @@
+# Development override: only runs Postgres. Run backend/frontend/ai-service
+# natively for hot reload:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up db
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fleet}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fleet}
+      POSTGRES_DB: ${POSTGRES_DB:-fleetdb}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+
+  backend:
+    profiles: ["disabled"]
+  ai-service:
+    profiles: ["disabled"]
+  frontend:
+    profiles: ["disabled"]
+
+volumes:
+  pgdata-dev:

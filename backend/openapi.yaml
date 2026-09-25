@@ -1,0 +1,550 @@
+openapi: 3.0.3
+info:
+  title: FleetOps — Fleet Management API
+  version: 1.0.0
+  description: |
+    REST API for the Fleet Management & Vehicle Operations Platform.
+    All protected endpoints require `Authorization: Bearer <accessToken>`.
+    All responses use the envelope `{ success, data | message, errorCode }`.
+servers:
+  - url: http://localhost:4000
+tags:
+  - name: Auth
+  - name: Vehicles
+  - name: Drivers
+  - name: Trips
+  - name: Maintenance
+  - name: Fuel
+  - name: Documents
+  - name: Notifications
+  - name: Analytics
+  - name: Reports
+  - name: AI
+  - name: Admin
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200': { description: Service is up }
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                phone: { type: string }
+      responses:
+        '201': { description: Created — returns user + tokens }
+        '409': { description: Email already registered }
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200': { description: Returns user + accessToken + refreshToken }
+        '401': { description: Invalid credentials }
+
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate refresh token and get a new access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties: { refreshToken: { type: string } }
+      responses:
+        '200': { description: New token pair }
+        '401': { description: Refresh token invalid/expired }
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: User object }
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke a refresh token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { refreshToken: { type: string } }
+      responses:
+        '200': { description: Logged out }
+
+  /api/vehicles:
+    get:
+      tags: [Vehicles]
+      summary: List vehicles (paginated, filterable)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 10 } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [AVAILABLE, ASSIGNED, ON_TRIP, MAINTENANCE, INACTIVE] } }
+        - { name: vehicleType, in: query, schema: { type: string, enum: [TRUCK, VAN, CAR, BUS, MINIBUS, TRAILER, PICKUP, OTHER] } }
+        - { name: sortBy, in: query, schema: { type: string } }
+        - { name: sortOrder, in: query, schema: { type: string, enum: [asc, desc] } }
+      responses:
+        '200': { description: Paginated vehicle list }
+    post:
+      tags: [Vehicles]
+      summary: Create vehicle (manager+)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VehicleInput' }
+      responses:
+        '201': { description: Created }
+        '403': { description: Insufficient role }
+
+  /api/vehicles/{id}:
+    get:
+      tags: [Vehicles]
+      summary: Vehicle detail with trip/maintenance/fuel history
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Vehicle detail }
+        '404': { description: Not found }
+    put:
+      tags: [Vehicles]
+      summary: Update vehicle (manager+)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VehicleInput' }
+      responses:
+        '200': { description: Updated }
+    delete:
+      tags: [Vehicles]
+      summary: Deactivate vehicle (manager+)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Deactivated }
+
+  /api/vehicles/{id}/assign-driver:
+    post:
+      tags: [Vehicles]
+      summary: Assign or unassign a driver (manager+)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { driverId: { type: string, nullable: true } }
+      responses:
+        '200': { description: Updated vehicle }
+
+  /api/vehicles/{id}/report-issue:
+    post:
+      tags: [Vehicles]
+      summary: Driver reports a vehicle problem (driver+)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [description]
+              properties:
+                description: { type: string, minLength: 5, maxLength: 500 }
+                severity: { type: string, enum: [LOW, NORMAL, HIGH], default: NORMAL }
+      responses:
+        '201': { description: Maintenance ticket created, managers notified }
+
+  /api/drivers:
+    get:
+      tags: [Drivers]
+      summary: List drivers (paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        '200': { description: Paginated driver list }
+    post:
+      tags: [Drivers]
+      summary: Create driver (manager+)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DriverInput' }
+      responses:
+        '201': { description: Created }
+
+  /api/drivers/{id}:
+    get:
+      tags: [Drivers]
+      summary: Driver detail incl. performance stats
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Driver detail }
+    put:
+      tags: [Drivers]
+      summary: Update driver (manager+)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DriverInput' }
+      responses:
+        '200': { description: Updated }
+
+  /api/trips:
+    get:
+      tags: [Trips]
+      summary: List trips (paginated, filterable)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [SCHEDULED, STARTED, IN_TRANSIT, COMPLETED, CANCELLED, DELAYED] } }
+        - { name: vehicleId, in: query, schema: { type: string } }
+        - { name: driverId, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Paginated trip list }
+    post:
+      tags: [Trips]
+      summary: Create + assign a trip (manager+). Validates vehicle/driver availability and license validity.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TripInput' }
+      responses:
+        '201': { description: Created }
+        '409': { description: Vehicle/driver unavailable }
+
+  /api/trips/{id}/start:
+    put:
+      tags: [Trips]
+      summary: Start trip — SCHEDULED → STARTED (vehicle → ON_TRIP)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: Updated }
+        '409': { description: Invalid transition }
+
+  /api/trips/{id}/transit:
+    put:
+      tags: [Trips]
+      summary: Mark trip IN_TRANSIT
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Updated } }
+
+  /api/trips/{id}/complete:
+    put:
+      tags: [Trips]
+      summary: Complete trip — vehicle & driver return to AVAILABLE
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { odometer: { type: number } }
+      responses: { '200': { description: Updated } }
+
+  /api/trips/{id}/delay:
+    put:
+      tags: [Trips]
+      summary: Mark trip DELAYED (notifies managers)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Updated } }
+
+  /api/trips/{id}/cancel:
+    put:
+      tags: [Trips]
+      summary: Cancel trip
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Updated } }
+
+  /api/maintenance:
+    get:
+      tags: [Maintenance]
+      summary: List maintenance records
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: vehicleId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+      responses: { '200': { description: Paginated list } }
+    post:
+      tags: [Maintenance]
+      summary: Schedule/create maintenance (manager+)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MaintenanceInput' }
+      responses: { '201': { description: Created } }
+
+  /api/maintenance/dashboard:
+    get:
+      tags: [Maintenance]
+      summary: Upcoming/overdue services + cost breakdown
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Maintenance dashboard data } }
+
+  /api/fuel:
+    get:
+      tags: [Fuel]
+      summary: List fuel records
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: vehicleId, in: query, schema: { type: string } }
+        - { name: driverId, in: query, schema: { type: string } }
+      responses: { '200': { description: Paginated list } }
+    post:
+      tags: [Fuel]
+      summary: Add fuel record (driver/manager+). totalCost is computed server-side.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FuelInput' }
+      responses: { '201': { description: Created } }
+
+  /api/fuel/efficiency:
+    get:
+      tags: [Fuel]
+      summary: Per-vehicle km/L efficiency + anomalies
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Efficiency report } }
+
+  /api/documents:
+    get:
+      tags: [Documents]
+      summary: List documents (filter by entity/status/expiry)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: entityType, in: query, schema: { type: string, enum: [VEHICLE, DRIVER] } }
+        - { name: entityId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [VALID, EXPIRING_SOON, EXPIRED] } }
+        - { name: expiringInDays, in: query, schema: { type: integer } }
+      responses: { '200': { description: Paginated list } }
+    post:
+      tags: [Documents]
+      summary: Register a document (manager+)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DocumentInput' }
+      responses: { '201': { description: Created } }
+
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: My notifications
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: unread, in: query, schema: { type: boolean } }
+      responses: { '200': { description: Paginated list + unread count } }
+
+  /api/locations/live:
+    get:
+      tags: [Analytics]
+      summary: Latest known position of all fleet vehicles
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Vehicle positions } }
+
+  /api/analytics/dashboard:
+    get:
+      tags: [Analytics]
+      summary: KPI dashboard data
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: KPIs } }
+
+  /api/analytics/charts:
+    get:
+      tags: [Analytics]
+      summary: Chart series (fuel/maintenance/trips per month, utilization, usage)
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Chart data } }
+
+  /api/reports/fleet:
+    get:
+      tags: [Reports]
+      summary: Fleet report (JSON or ?format=csv)
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Report } }
+
+  /api/reports/trips:
+    get:
+      tags: [Reports]
+      summary: Trip report (JSON or ?format=csv)
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Report } }
+
+  /api/ai/ask:
+    post:
+      tags: [AI]
+      summary: Ask the AI fleet assistant a natural-language question
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties: { question: { type: string } }
+      responses: { '200': { description: Answer + tool used } }
+
+  /api/ai/predictive-maintenance/{vehicleId}:
+    get:
+      tags: [AI]
+      summary: Maintenance risk prediction for a vehicle
+      security: [{ bearerAuth: [] }]
+      parameters: [{ name: vehicleId, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Risk level + reasons } }
+
+  /api/audit-logs:
+    get:
+      tags: [Admin]
+      summary: Audit log (SUPER_ADMIN only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Paginated audit entries }
+        '403': { description: Admins only }
+
+  /api/users:
+    get:
+      tags: [Admin]
+      summary: List users (SUPER_ADMIN only)
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Paginated users } }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    VehicleInput:
+      type: object
+      required: [vehicleNumber, registrationNumber, vehicleType, manufacturer, model, manufacturingYear, fuelType]
+      properties:
+        vehicleNumber: { type: string }
+        registrationNumber: { type: string }
+        vehicleType: { type: string, enum: [TRUCK, VAN, CAR, BUS, MINIBUS, TRAILER, PICKUP, OTHER] }
+        manufacturer: { type: string }
+        model: { type: string }
+        manufacturingYear: { type: integer }
+        fuelType: { type: string, enum: [DIESEL, PETROL, CNG, LPG, ELECTRIC, HYBRID] }
+        capacity: { type: number }
+        currentOdometer: { type: number }
+        purchaseDate: { type: string, format: date }
+    DriverInput:
+      type: object
+      required: [employeeId, name, phone, licenseNumber, licenseExpiry]
+      properties:
+        employeeId: { type: string }
+        name: { type: string }
+        phone: { type: string }
+        email: { type: string, format: email }
+        licenseNumber: { type: string }
+        licenseExpiry: { type: string, format: date }
+        experienceYears: { type: integer }
+    TripInput:
+      type: object
+      required: [vehicleId, driverId, source, destination, startTime]
+      properties:
+        vehicleId: { type: string, format: uuid }
+        driverId: { type: string, format: uuid }
+        source: { type: string }
+        destination: { type: string }
+        startTime: { type: string, format: date-time }
+        expectedEndTime: { type: string, format: date-time }
+        distance: { type: number }
+        notes: { type: string }
+    MaintenanceInput:
+      type: object
+      required: [vehicleId, serviceType, serviceDate]
+      properties:
+        vehicleId: { type: string, format: uuid }
+        serviceType: { type: string }
+        serviceDate: { type: string, format: date-time }
+        odometer: { type: number }
+        nextServiceOdometer: { type: number }
+        cost: { type: number }
+        workshop: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED] }
+    FuelInput:
+      type: object
+      required: [vehicleId, fuelDate, fuelType, liters, pricePerLiter]
+      properties:
+        vehicleId: { type: string, format: uuid }
+        driverId: { type: string, format: uuid }
+        fuelDate: { type: string, format: date-time }
+        fuelType: { type: string, enum: [DIESEL, PETROL, CNG, LPG, ELECTRIC, HYBRID] }
+        liters: { type: number }
+        pricePerLiter: { type: number }
+        odometer: { type: number }
+        station: { type: string }
+    DocumentInput:
+      type: object
+      required: [entityType, entityId, documentType]
+      properties:
+        entityType: { type: string, enum: [VEHICLE, DRIVER] }
+        entityId: { type: string, format: uuid }
+        documentType: { type: string, enum: [REGISTRATION, INSURANCE, PUC, PERMIT, DRIVING_LICENSE, FITNESS_CERTIFICATE, OTHER] }
+        documentNumber: { type: string }
+        issueDate: { type: string, format: date }
+        expiryDate: { type: string, format: date }
+        fileUrl: { type: string }

@@ -1,0 +1,373 @@
+// Fleet Management & Vehicle Operations Platform — data model
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------- Enums -------------------------
+
+enum Role {
+  SUPER_ADMIN
+  FLEET_MANAGER
+  DRIVER
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum DriverStatus {
+  AVAILABLE
+  ASSIGNED
+  ON_TRIP
+  ON_LEAVE
+  INACTIVE
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  ASSIGNED
+  ON_TRIP
+  MAINTENANCE
+  INACTIVE
+}
+
+enum VehicleType {
+  TRUCK
+  VAN
+  CAR
+  BUS
+  MINIBUS
+  TRAILER
+  PICKUP
+  OTHER
+}
+
+enum FuelType {
+  DIESEL
+  PETROL
+  CNG
+  LPG
+  ELECTRIC
+  HYBRID
+}
+
+enum TripStatus {
+  SCHEDULED
+  STARTED
+  IN_TRANSIT
+  COMPLETED
+  CANCELLED
+  DELAYED
+}
+
+enum MaintenanceStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum DocumentType {
+  REGISTRATION
+  INSURANCE
+  PUC
+  PERMIT
+  DRIVING_LICENSE
+  FITNESS_CERTIFICATE
+  OTHER
+}
+
+enum DocumentStatus {
+  VALID
+  EXPIRING_SOON
+  EXPIRED
+}
+
+enum DocumentEntityType {
+  VEHICLE
+  DRIVER
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  ALERT
+  SUCCESS
+}
+
+// ------------------------- Auth / Users -------------------------
+
+model User {
+  id            String     @id @default(uuid())
+  name          String
+  email         String     @unique
+  passwordHash  String     @map("password_hash")
+  role          Role       @default(VIEWER)
+  phone         String?
+  status        UserStatus @default(ACTIVE)
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  driverProfile      Driver?
+  refreshTokens      RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @map("token_hash")
+  userAgent String?   @map("user_agent")
+  ip        String?
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ------------------------- Drivers -------------------------
+
+model Driver {
+  id              String       @id @default(uuid())
+  employeeId      String       @unique @map("employee_id")
+  name            String
+  phone           String
+  email           String?
+  licenseNumber   String       @unique @map("license_number")
+  licenseExpiry   DateTime     @map("license_expiry")
+  experienceYears Int          @default(0) @map("experience_years")
+  status          DriverStatus @default(AVAILABLE)
+  userId          String?      @unique @map("user_id")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  user               User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  assignedVehicles   Vehicle[]
+  trips              Trip[]
+  fuelRecords        FuelRecord[]
+
+  @@index([status])
+  @@map("drivers")
+}
+
+// ------------------------- Vehicles -------------------------
+
+model Vehicle {
+  id                 String        @id @default(uuid())
+  vehicleNumber      String        @unique @map("vehicle_number")
+  registrationNumber String        @unique @map("registration_number")
+  vehicleType        VehicleType   @map("vehicle_type")
+  manufacturer       String
+  model              String
+  manufacturingYear  Int           @map("manufacturing_year")
+  fuelType           FuelType      @map("fuel_type")
+  capacity           Float?
+  currentOdometer    Float         @default(0) @map("current_odometer")
+  status             VehicleStatus @default(AVAILABLE)
+  purchaseDate       DateTime?     @map("purchase_date")
+  assignedDriverId   String?       @map("assigned_driver_id")
+  // Denormalized latest known position (full history lives in GpsLocation)
+  lastLatitude       Float?        @map("last_latitude")
+  lastLongitude      Float?        @map("last_longitude")
+  lastSpeed          Float?        @map("last_speed")
+  lastLocationAt     DateTime?     @map("last_location_at")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  assignedDriver     Driver?             @relation(fields: [assignedDriverId], references: [id], onDelete: SetNull)
+  trips              Trip[]
+  gpsLocations       GpsLocation[]
+  maintenanceRecords MaintenanceRecord[]
+  fuelRecords        FuelRecord[]
+
+  @@index([status])
+  @@index([vehicleType])
+  @@index([assignedDriverId])
+  @@map("vehicles")
+}
+
+// ------------------------- Trips -------------------------
+
+model Trip {
+  id               String     @id @default(uuid())
+  tripNumber       String     @unique @map("trip_number")
+  vehicleId        String     @map("vehicle_id")
+  driverId         String     @map("driver_id")
+  source           String
+  destination      String
+  sourceLat        Float?     @map("source_lat")
+  sourceLng        Float?     @map("source_lng")
+  destinationLat   Float?     @map("destination_lat")
+  destinationLng   Float?     @map("destination_lng")
+  startTime        DateTime   @map("start_time")
+  expectedEndTime  DateTime?  @map("expected_end_time")
+  actualEndTime    DateTime?  @map("actual_end_time")
+  status           TripStatus @default(SCHEDULED)
+  distance         Float?
+  notes            String?
+  createdById      String?    @map("created_by_id")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  driver  Driver  @relation(fields: [driverId], references: [id])
+
+  @@index([status])
+  @@index([vehicleId])
+  @@index([driverId])
+  @@index([startTime])
+  @@map("trips")
+}
+
+// ------------------------- GPS -------------------------
+
+model GpsLocation {
+  id        String   @id @default(uuid())
+  vehicleId String   @map("vehicle_id")
+  latitude  Float
+  longitude Float
+  speed     Float    @default(0)
+  heading   Float?
+  timestamp DateTime @default(now())
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, timestamp])
+  @@map("gps_locations")
+}
+
+// ------------------------- Maintenance -------------------------
+
+model MaintenanceRecord {
+  id                  String            @id @default(uuid())
+  vehicleId           String            @map("vehicle_id")
+  serviceType         String            @map("service_type")
+  serviceDate         DateTime          @map("service_date")
+  odometer            Float?
+  nextServiceOdometer Float?            @map("next_service_odometer")
+  nextServiceDate     DateTime?         @map("next_service_date")
+  cost                Float             @default(0)
+  workshop            String?
+  description         String?
+  status              MaintenanceStatus @default(SCHEDULED)
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId])
+  @@index([status])
+  @@index([serviceDate])
+  @@map("maintenance_records")
+}
+
+// ------------------------- Fuel -------------------------
+
+model FuelRecord {
+  id            String   @id @default(uuid())
+  vehicleId     String   @map("vehicle_id")
+  driverId      String?  @map("driver_id")
+  fuelDate      DateTime @map("fuel_date")
+  fuelType      FuelType @map("fuel_type")
+  liters        Float
+  pricePerLiter Float    @map("price_per_liter")
+  totalCost     Float    @map("total_cost")
+  odometer      Float?
+  station       String?
+  receiptUrl    String?  @map("receipt_url")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  driver  Driver? @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  @@index([vehicleId, fuelDate])
+  @@index([driverId])
+  @@map("fuel_records")
+}
+
+// ------------------------- Documents -------------------------
+
+model Document {
+  id             String             @id @default(uuid())
+  entityType     DocumentEntityType @map("entity_type")
+  entityId       String             @map("entity_id")
+  documentType   DocumentType       @map("document_type")
+  documentNumber String?            @map("document_number")
+  issueDate      DateTime?          @map("issue_date")
+  expiryDate     DateTime?          @map("expiry_date")
+  fileUrl        String?            @map("file_url")
+  status         DocumentStatus     @default(VALID)
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  @@index([entityType, entityId])
+  @@index([expiryDate])
+  @@index([status])
+  @@map("documents")
+}
+
+// ------------------------- Notifications -------------------------
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  title     String
+  message   String
+  type      NotificationType @default(INFO)
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ------------------------- Audit -------------------------
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  oldValue  Json?    @map("old_value")
+  newValue  Json?    @map("new_value")
+  timestamp DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entity, entityId])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
