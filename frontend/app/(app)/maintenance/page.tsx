@@ -73,7 +73,7 @@ export default function MaintenancePage() {
               <p className="text-sm text-muted-foreground">Nothing scheduled</p>
             ) : (
               <div className="space-y-2">
-                {[...(d?.overdue ?? []), ...(d?.upcoming ?? [])].slice(0, 8).map((m) => (
+                {[...new Map([...(d?.overdue ?? []), ...(d?.upcoming ?? [])].map((m) => [m.id, m])).values()].slice(0, 8).map((m) => (
                   <div key={m.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                     <div>
                       <span className="font-medium">{m.vehicle?.vehicleNumber}</span>

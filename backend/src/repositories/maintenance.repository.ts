@@ -40,9 +40,11 @@ export const maintenanceRepository = {
 
   /** Services coming up (scheduled, sorted by date). */
   upcoming(days = 30) {
-    const until = new Date(Date.now() + days * 86_400_000);
+    const now = new Date();
+    const until = new Date(now.getTime() + days * 86_400_000);
     return prisma.maintenanceRecord.findMany({
-      where: { status: 'SCHEDULED', serviceDate: { lte: until } },
+      // gte: now keeps overdue records out — they belong to `overdue()` only
+      where: { status: 'SCHEDULED', serviceDate: { gte: now, lte: until } },
       include,
       orderBy: { serviceDate: 'asc' },
     });
