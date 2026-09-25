@@ -28,18 +28,22 @@ export const notificationService = {
     return notification;
   },
 
-  /** Notify all SUPER_ADMIN + FLEET_MANAGER users. */
+  /**
+   * Notify all SUPER_ADMIN + FLEET_MANAGER + VIEWER users.
+   * Viewers are read-only — letting them see operational alerts keeps the
+   * notification center useful without granting any write access.
+   */
   async notifyManagers(input: NotifyInput) {
+    const roles = ['SUPER_ADMIN', 'FLEET_MANAGER', 'VIEWER'] as const;
     const users = await prisma.user.findMany({
-      where: { role: { in: ['SUPER_ADMIN', 'FLEET_MANAGER'] }, status: 'ACTIVE' },
+      where: { role: { in: [...roles] }, status: 'ACTIVE' },
       select: { id: true },
     });
     if (!users.length) return;
     await notificationRepository.createMany(
       users.map((u) => ({ userId: u.id, title: input.title, message: input.message, type: input.type })),
     );
-    emitToRole('SUPER_ADMIN', 'notification:new', input);
-    emitToRole('FLEET_MANAGER', 'notification:new', input);
+    for (const r of roles) emitToRole(r, 'notification:new', input);
   },
 
   markRead(id: string, userId: string) {

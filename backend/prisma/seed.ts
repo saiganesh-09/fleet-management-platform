@@ -215,27 +215,52 @@ async function main() {
     }
   }
 
-  // ---- Fuel records (odometer-ordered so efficiency can be computed) ----
+  // ---- Fuel records — liters derived from a per-vehicle baseline km/L ----
+  // so efficiency is realistic & stable. The last fill of 2 vehicles is
+  // deliberately ~45% inefficient → clean, explainable AI anomalies.
+  const BASE_EFF: Record<string, [number, number]> = {
+    TRUCK: [3.5, 5.5], TRAILER: [3, 4.5], BUS: [4.5, 6.5], MINIBUS: [6, 8],
+    PICKUP: [7, 9.5], VAN: [8, 11], CAR: [12, 17], OTHER: [7, 10],
+  };
+  const ANOMALOUS_VEHICLES = new Set([vehicles[3]?.id, vehicles[9]?.id].filter(Boolean));
+
+  let fi = 0;
   for (const vehicle of vehicles) {
-    const count = randInt(2, 4);
-    let odo = Math.max(1000, vehicle.currentOdometer - randInt(3000, 8000));
+    const count = randInt(5, 7);
+    const [lo, hi] = BASE_EFF[vehicle.vehicleType] ?? BASE_EFF.OTHER;
+    const baseline = randF(lo, hi, 2); // this vehicle's "normal" km/L
+    const isAnomalous = ANOMALOUS_VEHICLES.has(vehicle.id);
+
+    // Segments sum exactly to `span`, ending at currentOdometer — guarantees a
+    // positive distance for every segment (a 0-km fill gets skipped by the
+    // efficiency calc and would silently swallow the anomaly).
+    const span = Math.max(count * 280, Math.min(vehicle.currentOdometer - 300, count * 450));
+    let odo = vehicle.currentOdometer - span;
+    const step = Math.floor(span / count);
     for (let j = 0; j < count; j++) {
-      const liters = randF(20, 90, 1);
-      const ppl = randF(88, 105, 2);
-      odo += randF(150, 600, 0);
+      const prevOdo = odo;
+      odo = j === count - 1 ? vehicle.currentOdometer : odo + step;
+      const dist = odo - prevOdo;
+      const last = j === count - 1;
+      // most fills land within ±6% of baseline; anomalous vehicles run
+      // ~45-55% less efficient on the last fill (same dist, ~2x litres)
+      const effFactor = isAnomalous && last ? randF(0.45, 0.55, 2) : randF(0.94, 1.06, 3);
+      const liters = Math.min(200, Math.max(8, dist / (baseline * effFactor)));
+      const ppl = vehicle.fuelType === 'PETROL' ? randF(102, 108, 2) : randF(88, 96, 2);
       await prisma.fuelRecord.create({
         data: {
           vehicleId: vehicle.id,
           driverId: vehicle.assignedDriverId,
-          fuelDate: daysAgo(randInt(1, 60)),
+          fuelDate: daysAgo((count - j - 1) * 9 + randInt(0, 3)), // increasing dates, last = most recent
           fuelType: vehicle.fuelType,
-          liters,
+          liters: Math.round(liters * 10) / 10,
           pricePerLiter: ppl,
           totalCost: parseFloat((liters * ppl).toFixed(2)),
-          odometer: Math.min(odo, vehicle.currentOdometer),
+          odometer: odo,
           station: rand(STATIONS),
         },
       });
+      fi++;
     }
   }
 

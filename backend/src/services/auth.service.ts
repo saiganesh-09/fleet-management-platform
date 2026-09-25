@@ -10,6 +10,7 @@ import {
   signAccessToken,
 } from '../utils/jwt';
 import { audit } from '../utils/audit';
+import { notificationService } from './notification.service';
 import { Role } from '@prisma/client';
 
 const publicUser = {
@@ -53,6 +54,11 @@ export const authService = {
       select: publicUser,
     });
     await audit({ userId: user.id, action: 'USER_REGISTERED', entity: 'User', entityId: user.id, newValue: { email: user.email, role } });
+    await notificationService.notifyUser(user.id, {
+      title: 'Welcome to FleetOps',
+      message: `Hi ${user.name.split(' ')[0]} — your account is ready with the ${role.replace(/_/g, ' ')} role. Explore the dashboard, live map and reports.`,
+      type: 'SUCCESS',
+    });
     const tokens = await issueSession(user.id, user.email, user.role, meta);
     return { user, ...tokens };
   },

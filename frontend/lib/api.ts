@@ -71,10 +71,18 @@ export async function api<T = unknown>(
     });
   };
 
+  const hadCreds = !!getTokens()?.accessToken;
   let res = await doFetch();
   if (res.status === 401 && getTokens()?.refreshToken) {
     refreshing ??= refreshTokens().finally(() => { refreshing = null; });
     if (await refreshing) res = await doFetch();
+  }
+  // Unrecoverable auth failure (e.g. session invalidated by a reseed) —
+  // clear credentials and tell the app to drop back to the login screen
+  // instead of rendering empty/error states on every page.
+  if (res.status === 401 && hadCreds) {
+    setTokens(null);
+    window.dispatchEvent(new Event('fleet:unauthorized'));
   }
 
   // csv export returns raw text

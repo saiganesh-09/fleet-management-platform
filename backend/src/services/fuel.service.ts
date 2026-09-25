@@ -25,12 +25,21 @@ export function computeEfficiency(records: { liters: number; odometer: number | 
   for (let i = 1; i < sorted.length; i++) {
     const dist = (sorted[i].odometer ?? 0) - (sorted[i - 1].odometer ?? 0);
     const liters = sorted[i].liters;
-    if (dist > 0 && liters > 0) segments.push(dist / liters);
+    // Ignore implausible segments (missing fills between readings skew them)
+    if (dist > 0 && liters > 0 && dist / liters < 40) segments.push(dist / liters);
   }
   if (!segments.length) return { avg: null, recent: null };
-  const avg = segments.reduce((s, v) => s + v, 0) / segments.length;
+  // Median is robust to the odd missed/half fill
+  const ordered = [...segments].sort((a, b) => a - b);
+  const mid = Math.floor(ordered.length / 2);
+  const avg = ordered.length % 2 ? ordered[mid] : (ordered[mid - 1] + ordered[mid]) / 2;
   const recent = segments[segments.length - 1];
   return { avg, recent };
+}
+
+/** True when the most recent segment drops >25% below the vehicle's median. */
+export function isAnomalous(avg: number | null, recent: number | null, recordCount: number) {
+  return avg != null && recent != null && recordCount >= 5 && recent < avg * 0.75;
 }
 
 export const fuelService = {
@@ -86,10 +95,10 @@ export const fuelService = {
     // Anomaly check: compare latest segment efficiency to the vehicle's history
     const history = await fuelRepository.forVehicle(input.vehicleId);
     const { avg, recent } = computeEfficiency(history);
-    if (avg != null && recent != null && history.length >= 5 && recent < avg * 0.7) {
+    if (isAnomalous(avg, recent, history.length)) {
       await notificationService.notifyManagers({
         title: 'Unusual fuel efficiency detected',
-        message: `${vehicle.vehicleNumber}: recent efficiency ${recent.toFixed(1)} km/L vs average ${avg.toFixed(1)} km/L`,
+        message: `${vehicle.vehicleNumber}: recent efficiency ${recent!.toFixed(1)} km/L vs average ${avg!.toFixed(1)} km/L`,
         type: 'ALERT',
       });
     }
@@ -118,7 +127,7 @@ export const fuelService = {
         avgEfficiency: avg,
         recentEfficiency: recent,
         records: records.length,
-        anomaly: avg != null && recent != null && records.length >= 5 && recent < avg * 0.7,
+        anomaly: isAnomalous(avg, recent, records.length),
       });
     }
     return results;

@@ -124,7 +124,8 @@ def fuel_anomalies(fuel_payload: dict, threshold: float = 0.75) -> list[dict]:
     anomalies = []
     for e in fuel_payload.get("efficiency", []):
         avg, recent, records = e.get("avgEfficiency"), e.get("recentEfficiency"), e.get("records", 0)
-        if avg is None or recent is None or records < 3:
+        # Need enough history for the baseline to be meaningful
+        if avg is None or recent is None or records < 5:
             continue
         if recent < avg * threshold:
             deviation = round((recent - avg) / avg * 100, 1)

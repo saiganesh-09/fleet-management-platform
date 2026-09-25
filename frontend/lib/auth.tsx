@@ -32,6 +32,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
+  // Forced logout when any API call hits an unrecoverable 401
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setUser(null);
+      disconnectSocket();
+      router.replace('/login');
+    };
+    window.addEventListener('fleet:unauthorized', onUnauthorized);
+    return () => window.removeEventListener('fleet:unauthorized', onUnauthorized);
+  }, [router]);
+
   const login = useCallback(async (email: string, password: string) => {
     const res = await authApi.login(email, password);
     setTokens({ accessToken: res.data.accessToken, refreshToken: res.data.refreshToken });
