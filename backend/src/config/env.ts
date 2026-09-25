@@ -21,6 +21,7 @@ export const env = {
   jwtRefreshTtl: process.env.JWT_REFRESH_TTL ?? '7d',
   frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3000',
   corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:3000').split(',').map((s) => s.trim()),
+  corsOriginSuffixes: (process.env.CORS_ORIGIN_SUFFIXES ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   aiServiceUrl: process.env.AI_SERVICE_URL ?? 'http://localhost:8000',
   aiInternalToken: process.env.AI_INTERNAL_TOKEN ?? 'dev-internal-token',
   gpsSimulatorEnabled: (process.env.GPS_SIMULATOR_ENABLED ?? 'true') === 'true',

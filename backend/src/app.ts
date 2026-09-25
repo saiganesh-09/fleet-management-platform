@@ -21,7 +21,17 @@ export function createApp() {
 
   app.set('trust proxy', 1);
   app.use(helmet());
-  app.use(cors({ origin: env.corsOrigins, credentials: true }));
+  app.use(cors({
+    credentials: true,
+    origin: (origin, cb) => {
+      // No Origin header (curl, server-to-server) → allow
+      if (!origin) return cb(null, true);
+      if (env.corsOrigins.includes(origin)) return cb(null, true);
+      // Trusted deployment suffixes, e.g. "<prefix>.vercel.app" for preview URLs
+      if (env.corsOriginSuffixes.some((s) => origin.endsWith(s))) return cb(null, true);
+      cb(null, false);
+    },
+  }));
   app.use(compression());
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
